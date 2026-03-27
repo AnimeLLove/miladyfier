@@ -2,7 +2,6 @@
 
 *miladyfying your timeline since 2026*
 
-![hero](assets/hero.png)
 
 ## Why
 
