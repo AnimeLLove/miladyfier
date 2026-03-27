@@ -1,5 +1,7 @@
 export interface RuntimeImageFeatures {
   hash: string;
   averageColor: [number, number, number];
-  modelFeatures: number[];
+  legacyFeatures: number[];
+  modelTensor: number[];
+  modelShape: [1, 3, 128, 128];
 }

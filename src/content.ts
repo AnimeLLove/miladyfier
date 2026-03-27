@@ -1,11 +1,13 @@
 import {
+  CLASSIFIER_MODEL_METADATA_URL,
+  CLASSIFIER_MODEL_URL,
   COLOR_DISTANCE_THRESHOLD,
   DEFAULT_SETTINGS,
   HASH_MATCH_THRESHOLD,
   HASH_ONNX_THRESHOLD,
   HASH_URL,
-  MODEL_METADATA_URL,
-  MODEL_URL,
+  LEGACY_MODEL_METADATA_URL,
+  LEGACY_MODEL_URL,
 } from "./shared/constants";
 import {
   loadCorsImage,
@@ -33,6 +35,7 @@ import type {
   HashDatabase,
   MatchedAccountMap,
   ModelMetadata,
+  WorkerRequest,
   WorkerResponse,
 } from "./shared/types";
 
@@ -48,7 +51,7 @@ const revealed = new WeakMap<HTMLElement, string>();
 
 let settings: ExtensionSettings = DEFAULT_SETTINGS;
 let hashDatabasePromise: Promise<HashDatabase> | null = null;
-let modelMetadataPromise: Promise<ModelMetadata> | null = null;
+let modelMetadataPromise: Promise<ResolvedModel> | null = null;
 let workerPromise: Promise<Worker> | null = null;
 let pendingWorker = new Map<string, (score: number) => void>();
 let scanScheduled = false;
@@ -57,6 +60,13 @@ let stats: DetectionStats | null = null;
 let matchedAccounts: MatchedAccountMap | null = null;
 let collectedAvatars: CollectedAvatarMap | null = null;
 let localStateWriteScheduled = false;
+
+interface ResolvedModel {
+  metadata: ModelMetadata;
+  modelUrl: string;
+  positiveIndex: number;
+  kind: "classifier" | "legacy";
+}
 
 void boot();
 
@@ -305,13 +315,18 @@ async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: stri
       };
     }
 
-    const score = await scoreWithOnnx(best.features.modelFeatures, normalizedUrl);
-    const metadata = await loadModelMetadata();
+    const resolvedModel = await loadModelMetadata();
+    const score = await scoreWithOnnx(
+      resolvedModel,
+      variants.map((entry) => entry.modelTensor),
+      variants.map((entry) => entry.legacyFeatures),
+      normalizedUrl,
+    );
     return {
-      matched: score >= metadata.threshold,
-      source: score >= metadata.threshold ? "onnx" : null,
+      matched: score >= resolvedModel.metadata.threshold,
+      source: score >= resolvedModel.metadata.threshold ? "onnx" : null,
       score,
-      tokenId: score >= metadata.threshold ? best.candidate.entry.tokenId : null,
+      tokenId: score >= resolvedModel.metadata.threshold ? best.candidate.entry.tokenId : null,
     };
   } catch (error) {
     console.error("Milady detection failed", error);
@@ -556,19 +571,54 @@ async function loadHashDatabase(): Promise<HashDatabase> {
   return hashDatabasePromise;
 }
 
-async function loadModelMetadata(): Promise<ModelMetadata> {
+async function loadModelMetadata(): Promise<ResolvedModel> {
   if (!modelMetadataPromise) {
-    modelMetadataPromise = fetch(chrome.runtime.getURL(MODEL_METADATA_URL)).then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Failed to load model metadata: ${response.status}`);
-      }
-      return response.json() as Promise<ModelMetadata>;
-    });
+    modelMetadataPromise = resolveModel(
+      CLASSIFIER_MODEL_METADATA_URL,
+      CLASSIFIER_MODEL_URL,
+      "classifier",
+      LEGACY_MODEL_METADATA_URL,
+      LEGACY_MODEL_URL,
+    );
   }
   return modelMetadataPromise;
 }
 
-async function getWorker(): Promise<Worker> {
+async function resolveModel(
+  preferredMetadataUrl: string,
+  preferredModelUrl: string,
+  preferredKind: ResolvedModel["kind"],
+  fallbackMetadataUrl: string,
+  fallbackModelUrl: string,
+): Promise<ResolvedModel> {
+  const preferredResponse = await fetch(chrome.runtime.getURL(preferredMetadataUrl));
+  if (preferredResponse.ok) {
+    const metadata = await preferredResponse.json() as ModelMetadata;
+    return {
+      metadata,
+      modelUrl: chrome.runtime.getURL(preferredModelUrl),
+      positiveIndex: typeof metadata.positiveIndex === "number" ? metadata.positiveIndex : 1,
+      kind: preferredKind,
+    };
+  }
+
+  const fallbackResponse = await fetch(chrome.runtime.getURL(fallbackMetadataUrl));
+  if (!fallbackResponse.ok) {
+    throw new Error(
+      `Failed to load model metadata: preferred ${preferredResponse.status}, fallback ${fallbackResponse.status}`,
+    );
+  }
+
+  const metadata = await fallbackResponse.json() as ModelMetadata;
+  return {
+    metadata,
+    modelUrl: chrome.runtime.getURL(fallbackModelUrl),
+    positiveIndex: typeof metadata.positiveIndex === "number" ? metadata.positiveIndex : 0,
+    kind: "legacy",
+  };
+}
+
+async function getWorker(resolvedModel: ResolvedModel): Promise<Worker> {
   if (workerPromise) {
     return workerPromise;
   }
@@ -590,8 +640,9 @@ async function getWorker(): Promise<Worker> {
       resolver(event.data.score);
     });
     worker.postMessage({
-      modelUrl: chrome.runtime.getURL(MODEL_URL),
+      modelUrl: resolvedModel.modelUrl,
       wasmPath: chrome.runtime.getURL("ort/"),
+      positiveIndex: resolvedModel.positiveIndex,
     });
     return worker;
   });
@@ -599,16 +650,35 @@ async function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
-async function scoreWithOnnx(features: number[], seed: string): Promise<number> {
-  const worker = await getWorker();
-  return new Promise<number>((resolve) => {
-    const id = `${seed}:${crypto.randomUUID()}`;
-    pendingWorker.set(id, resolve);
-    worker.postMessage({
-      id,
-      features,
-    });
-  });
+async function scoreWithOnnx(
+  resolvedModel: ResolvedModel,
+  tensors: number[][],
+  legacyFeatures: number[][],
+  seed: string,
+): Promise<number> {
+  const worker = await getWorker(resolvedModel);
+  const scores = await Promise.all(
+    (resolvedModel.kind === "classifier" ? tensors : legacyFeatures).map(
+      (input, index) =>
+        new Promise<number>((resolve) => {
+          const id = `${seed}:${index}:${crypto.randomUUID()}`;
+          pendingWorker.set(id, resolve);
+          const payload: WorkerRequest =
+            resolvedModel.kind === "classifier"
+              ? {
+                id,
+                tensor: input,
+                shape: [1, 3, 128, 128],
+              }
+              : {
+                id,
+                features: input,
+              };
+          worker.postMessage(payload);
+        }),
+    ),
+  );
+  return Math.max(...scores);
 }
 
 function isFilterMode(value: unknown): value is ExtensionSettings["mode"] {

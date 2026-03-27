@@ -62,10 +62,17 @@ export interface HashDatabase {
 }
 
 export interface ModelMetadata {
-  collection: string;
+  architecture?: string;
+  classNames?: string[];
+  inputSize?: number;
+  channels?: number;
+  mean?: [number, number, number];
+  std?: [number, number, number];
+  positiveIndex?: number;
+  collection?: string;
   generatedAt: string;
-  inputLength: number;
   threshold: number;
+  inputLength?: number;
 }
 
 export interface CandidateScore {
@@ -82,7 +89,9 @@ export interface DetectionResult {
 
 export interface WorkerRequest {
   id: string;
-  features: number[];
+  features?: number[];
+  tensor?: number[];
+  shape?: [number, number, number, number];
 }
 
 export interface WorkerResponse {

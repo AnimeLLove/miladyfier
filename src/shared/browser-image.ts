@@ -1,4 +1,10 @@
 import type { RuntimeImageFeatures } from "./runtime-image-types";
+import {
+  CLASSIFIER_MODEL_CHANNELS,
+  CLASSIFIER_MODEL_INPUT_SIZE,
+  CLASSIFIER_MODEL_MEAN,
+  CLASSIFIER_MODEL_STD,
+} from "./constants";
 
 export type CropVariant = "center" | "top";
 
@@ -41,10 +47,23 @@ export async function computeBrowserImageFeatures(
   drawCoverImage(featureContext, image, 32, 32, variant);
   const modelPixels = featureContext.getImageData(0, 0, 32, 32).data;
 
+  const classifierCanvas = document.createElement("canvas");
+  classifierCanvas.width = CLASSIFIER_MODEL_INPUT_SIZE;
+  classifierCanvas.height = CLASSIFIER_MODEL_INPUT_SIZE;
+  const classifierContext = classifierCanvas.getContext("2d", { willReadFrequently: true });
+  if (!classifierContext) {
+    throw new Error("Unable to create classifier context");
+  }
+  drawCoverImage(classifierContext, image, CLASSIFIER_MODEL_INPUT_SIZE, CLASSIFIER_MODEL_INPUT_SIZE, variant);
+  const classifierPixels = classifierContext
+    .getImageData(0, 0, CLASSIFIER_MODEL_INPUT_SIZE, CLASSIFIER_MODEL_INPUT_SIZE).data;
+
   return {
     hash: computeDhashFromRgba(hashPixels, 9, 8),
     averageColor: computeAverageColorFromRgba(hashPixels),
-    modelFeatures: computeModelFeatures(modelPixels),
+    legacyFeatures: computeLegacyModelFeatures(modelPixels),
+    modelTensor: computeClassifierTensor(classifierPixels),
+    modelShape: [1, CLASSIFIER_MODEL_CHANNELS, CLASSIFIER_MODEL_INPUT_SIZE, CLASSIFIER_MODEL_INPUT_SIZE],
   };
 }
 
@@ -101,13 +120,35 @@ function rgbaToGray(buffer: Uint8ClampedArray, pixelIndex: number): number {
   return Math.round(buffer[offset] * 0.299 + buffer[offset + 1] * 0.587 + buffer[offset + 2] * 0.114);
 }
 
-function computeModelFeatures(buffer: Uint8ClampedArray): number[] {
+function computeLegacyModelFeatures(buffer: Uint8ClampedArray): number[] {
   const features: number[] = [];
   for (let offset = 0; offset < buffer.length; offset += 4) {
     const gray = Math.round(buffer[offset] * 0.299 + buffer[offset + 1] * 0.587 + buffer[offset + 2] * 0.114);
     features.push(gray / 255);
   }
   return features;
+}
+
+function computeClassifierTensor(buffer: Uint8ClampedArray): number[] {
+  const pixelCount = CLASSIFIER_MODEL_INPUT_SIZE * CLASSIFIER_MODEL_INPUT_SIZE;
+  const tensor = new Array<number>(CLASSIFIER_MODEL_CHANNELS * pixelCount);
+
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+    const offset = pixelIndex * 4;
+    tensor[pixelIndex] = buffer[offset] / 255;
+    tensor[pixelCount + pixelIndex] = buffer[offset + 1] / 255;
+    tensor[pixelCount * 2 + pixelIndex] = buffer[offset + 2] / 255;
+  }
+
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+    tensor[pixelIndex] = (tensor[pixelIndex] - CLASSIFIER_MODEL_MEAN[0]) / CLASSIFIER_MODEL_STD[0];
+    tensor[pixelCount + pixelIndex] =
+      (tensor[pixelCount + pixelIndex] - CLASSIFIER_MODEL_MEAN[1]) / CLASSIFIER_MODEL_STD[1];
+    tensor[pixelCount * 2 + pixelIndex] =
+      (tensor[pixelCount * 2 + pixelIndex] - CLASSIFIER_MODEL_MEAN[2]) / CLASSIFIER_MODEL_STD[2];
+  }
+
+  return tensor;
 }
 
 function bitsToHex(bits: string): string {
