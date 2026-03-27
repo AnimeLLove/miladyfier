@@ -1,8 +1,22 @@
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { viteStaticCopy } from "vite-plugin-static-copy";
 import solid from "vite-plugin-solid";
 import { defineConfig } from "vite";
+import packageJson from "./package.json";
+
+function syncManifestVersion() {
+  return {
+    name: "sync-manifest-version",
+    async closeBundle() {
+      const manifestPath = resolve(__dirname, "dist/manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { version?: string };
+      manifest.version = packageJson.version;
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    },
+  };
+}
 
 export default defineConfig({
   publicDir: "public",
@@ -25,6 +39,7 @@ export default defineConfig({
   },
   plugins: [
     solid(),
+    syncManifestVersion(),
     viteStaticCopy({
       targets: [
         {
