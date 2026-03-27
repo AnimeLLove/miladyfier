@@ -26,15 +26,15 @@ type TabId = "filter" | "stats" | "accounts" | "dataset";
 const TAB_LABELS: Array<{ id: TabId; label: string }> = [
   { id: "stats", label: "Stats" },
   { id: "filter", label: "Filter" },
-  { id: "accounts", label: "Collection" },
+  { id: "accounts", label: "Accounts" },
   { id: "dataset", label: "Data" },
 ];
 
 const MODE_OPTIONS: Array<{ value: FilterMode; label: string; note: string }> = [
-  { value: "off", label: "Off", note: "Do nothing." },
-  { value: "hide", label: "Hide", note: "Collapse matched posts into a reveal row." },
-  { value: "fade", label: "Fade", note: "Reduce matched posts to 50% opacity." },
-  { value: "debug", label: "Debug", note: "Show borders and detector score badges." },
+  { value: "off", label: "Off", note: "Do nothing. Show everything." },
+  { value: "hide", label: "Hide", note: "Collapse matched posts. Tap to reveal." },
+  { value: "fade", label: "Fade", note: "50% opacity. Present but diminished." },
+  { value: "debug", label: "Debug", note: "Show detection markers and scores." },
 ];
 
 const styles = `
@@ -447,8 +447,8 @@ function App() {
           <section class="panel">
             <div class="panel-header">
               <div>
-                <h2 class="panel-title">Filter Mode</h2>
-                <p class="section-note">Pick how matched posts should render in the feed.</p>
+                <h2 class="panel-title">Mode</h2>
+                <p class="section-note">What happens when a match is found.</p>
               </div>
             </div>
             <div class="mode-list">
@@ -476,8 +476,8 @@ function App() {
           <section class="panel">
             <div class="panel-header">
               <div>
-                <h2 class="panel-title">Session Stats</h2>
-                <p class="section-note">Live counts from the active browsing session.</p>
+                <h2 class="panel-title">Session</h2>
+                <p class="section-note">This session.</p>
               </div>
               <div class="actions">
                 <button type="button" class="action-button" onClick={() => void handleResetStats()}>
@@ -486,12 +486,12 @@ function App() {
               </div>
             </div>
             <dl class="stats-grid">
-              <div><dt>Posts seen</dt><dd>{formatNumber(stats().tweetsScanned)}</dd></div>
-              <div><dt>Posts matched</dt><dd>{formatNumber(stats().postsMatched)}</dd></div>
-              <div><dt>Match rate</dt><dd>{matchRateLabel()}</dd></div>
-              <div><dt>Whitelisted</dt><dd>{formatNumber(whitelistedAccounts().length)}</dd></div>
+              <div><dt>Seen</dt><dd>{formatNumber(stats().tweetsScanned)}</dd></div>
+              <div><dt>Matched</dt><dd>{formatNumber(stats().postsMatched)}</dd></div>
+              <div><dt>Rate</dt><dd>{matchRateLabel()}</dd></div>
+              <div><dt>Exempt</dt><dd>{formatNumber(whitelistedAccounts().length)}</dd></div>
               <div><dt>Errors</dt><dd>{formatNumber(stats().errors)}</dd></div>
-              <div><dt>Last hit</dt><dd>{lastHitLabel()}</dd></div>
+              <div><dt>Last match</dt><dd>{lastHitLabel()}</dd></div>
             </dl>
           </section>
         </Show>
@@ -500,18 +500,18 @@ function App() {
           <section class="panel">
             <div class="panel-header">
               <div>
-                <h2 class="panel-title">Matched Accounts</h2>
-                <p class="section-note">Click a handle to move it in or out of the whitelist.</p>
+                <h2 class="panel-title">Caught</h2>
+                <p class="section-note">Tap to exempt or un-exempt.</p>
               </div>
             </div>
             <Show
               when={sortedAccounts().length > 0}
-              fallback={<p class="empty">No matched accounts yet.</p>}
+              fallback={<p class="empty">Nothing caught yet.</p>}
             >
               <>
                 <Show when={whitelistedAccounts().length > 0}>
                   <div class="account-group">
-                    <p class="account-group-title">Whitelist</p>
+                    <p class="account-group-title">Exempt</p>
                     <div class="account-list">
                       <For each={whitelistedAccounts()}>
                         {(account) => (
@@ -520,10 +520,10 @@ function App() {
                             class="account-row"
                             data-whitelisted="true"
                             onClick={() => void toggleWhitelist(account.handle)}
-                            title={`@${account.handle} bypasses the filter`}
+                            title={`@${account.handle} is exempt`}
                           >
                             <p class="account-handle">@{account.handle}</p>
-                            <p class="account-note">{formatNumber(account.postsMatched)} matched posts, bypassed</p>
+                            <p class="account-note">{formatNumber(account.postsMatched)} hits, exempt</p>
                           </button>
                         )}
                       </For>
@@ -533,7 +533,7 @@ function App() {
 
                 <Show when={filteredAccounts().length > 0}>
                   <div class="account-group">
-                    <p class="account-group-title">Detected</p>
+                    <p class="account-group-title">Caught</p>
                     <div class="account-list">
                       <For each={filteredAccounts()}>
                         {(account) => (
@@ -542,10 +542,10 @@ function App() {
                             class="account-row"
                             data-whitelisted="false"
                             onClick={() => void toggleWhitelist(account.handle)}
-                            title={`Click to let @${account.handle} bypass the filter`}
+                            title={`Exempt @${account.handle}`}
                           >
                             <p class="account-handle">@{account.handle}</p>
-                            <p class="account-note">{formatNumber(account.postsMatched)} matched posts</p>
+                            <p class="account-note">{formatNumber(account.postsMatched)} hits</p>
                           </button>
                         )}
                       </For>
@@ -561,8 +561,8 @@ function App() {
           <section class="panel">
             <div class="panel-header">
               <div>
-                <h2 class="panel-title">Collected Avatars</h2>
-                <p class="section-note">Export normalized avatar URLs and metadata for offline labeling.</p>
+                <h2 class="panel-title">Dataset</h2>
+                <p class="section-note">Export avatar data for labeling.</p>
               </div>
               <div class="actions">
                 <button
