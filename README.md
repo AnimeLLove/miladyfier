@@ -2,6 +2,8 @@
 
 *protecting your timeline from the egregore since 2026*
 
+![hero](assets/hero.png)
+
 ## Why
 
 Some people find that a significant percentage of their timeline consists of accounts using aesthetically identical chibi avatars posting aesthetically identical content. This extension addresses that.
