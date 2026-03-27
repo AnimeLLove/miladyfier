@@ -7,7 +7,6 @@ import type {
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   mode: "off",
-  invertScore: false,
   whitelistHandles: [],
 };
 

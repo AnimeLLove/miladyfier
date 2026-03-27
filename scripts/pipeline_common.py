@@ -263,7 +263,7 @@ def discover_export_paths(inputs: list[str]) -> list[Path]:
     if inputs:
         paths = [Path(value) for value in inputs]
     else:
-        paths = sorted(CACHE_ROOT.glob("milady-shrinkifier-avatars-*.json"))
+        paths = sorted(CACHE_ROOT.glob("miladyfier-avatars-*.json"))
     return [path for path in paths if path.exists()]
 
 

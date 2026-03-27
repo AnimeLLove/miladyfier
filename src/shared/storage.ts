@@ -14,12 +14,10 @@ import type {
 export async function loadSettings(): Promise<ExtensionSettings> {
   const stored = await chrome.storage.sync.get({
     mode: DEFAULT_SETTINGS.mode,
-    invertScore: DEFAULT_SETTINGS.invertScore,
     whitelistHandles: DEFAULT_SETTINGS.whitelistHandles,
   });
   return {
     mode: isMode(stored.mode) ? stored.mode : DEFAULT_SETTINGS.mode,
-    invertScore: stored.invertScore === true,
     whitelistHandles: normalizeWhitelistHandles(stored.whitelistHandles),
   };
 }
@@ -27,7 +25,6 @@ export async function loadSettings(): Promise<ExtensionSettings> {
 export async function saveSettings(settings: ExtensionSettings): Promise<void> {
   await chrome.storage.sync.set({
     mode: settings.mode,
-    invertScore: settings.invertScore === true,
     whitelistHandles: normalizeWhitelistHandles(settings.whitelistHandles),
   });
 }

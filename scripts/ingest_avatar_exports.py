@@ -20,8 +20,8 @@ from pipeline_common import (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Ingest Milady Shrinkifier avatar exports into the local SQLite catalog.")
-    parser.add_argument("inputs", nargs="*", help="Export JSON files to ingest. Defaults to cache/milady-shrinkifier-avatars-*.json")
+    parser = argparse.ArgumentParser(description="Ingest Miladyfier avatar exports into the local SQLite catalog.")
+    parser.add_argument("inputs", nargs="*", help="Export JSON files to ingest. Defaults to cache/miladyfier-avatars-*.json")
     parser.add_argument("--copy-into-cache", action="store_true", help="Copy each ingested export into cache/exports/raw/ before recording it.")
     parser.add_argument("--force", action="store_true", help="Re-ingest exports even if they were previously seen by path.")
     return parser.parse_args()

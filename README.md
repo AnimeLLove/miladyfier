@@ -1,23 +1,23 @@
-# Milady Shrinkifier
+# Miladyfier
 
-*protecting your timeline from the egregore since 2026*
+*miladyfying your timeline since 2026*
 
 ![hero](assets/hero.png)
 
 ## Why
 
-Some people find that a significant percentage of their timeline consists of accounts using aesthetically identical chibi avatars posting aesthetically identical content. This extension addresses that.
+Some people want the opposite experience: a timeline that keeps the target avatars visible and filters out everything else. This fork does that.
 
 ## How It Works
 
-A bundled ONNX classifier scans avatars as you scroll. When it spots a match, you pick what happens:
+A bundled ONNX classifier scans avatars as you scroll. In this fork, non-matching avatars are treated as filter hits, so you can choose what happens to everything that is not the target set:
 
 - **Hide** — collapsed behind a click-to-reveal row.
 - **Fade** — visible but at half opacity.
 - **Debug** — borders and confidence scores on every post.
 - **Off** — does nothing.
 
-The popup tracks session stats (posts scanned, match rate, last sighting), keeps a list of detected accounts you can exempt individually, and collects avatar data you can export for offline labeling.
+The popup tracks session stats, keeps a list of filtered accounts you can exempt individually, and collects avatar data you can export for offline labeling.
 
 Everything runs locally. No server calls, no telemetry, nothing leaves your browser unless you explicitly export it.
 
@@ -25,7 +25,7 @@ Everything runs locally. No server calls, no telemetry, nothing leaves your brow
 
 There is no Chrome Web Store release. Install from GitHub Releases instead:
 
-1. Download the latest `milady-shrinkifier-vX.Y.Z-unpacked.zip` from Releases.
+1. Download the latest `miladyfier-vX.Y.Z-unpacked.zip` from Releases.
 2. Unzip it somewhere permanent on disk.
 3. Open `chrome://extensions`.
 4. Enable `Developer mode`.
@@ -39,3 +39,4 @@ There is no Chrome Web Store release. Install from GitHub Releases instead:
 - Training runs, labels, downloaded avatars, and dataset manifests live under ignored `cache/`.
 - The review app supports both individual labeling and 9-up batch labeling.
 - The extension runtime is ONNX-only.
+- This fork bakes in the inverted score path instead of exposing it as a setting.

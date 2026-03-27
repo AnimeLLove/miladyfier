@@ -69,7 +69,7 @@ The extension exports collected avatars as JSON manifests. The offline pipeline 
 Typical loop:
 
 ```bash
-pnpm run ingest:avatars -- cache/milady-shrinkifier-avatars-<timestamp>.json
+pnpm run ingest:avatars -- cache/miladyfier-avatars-<timestamp>.json
 pnpm run download:avatars
 pnpm run download:avatars -- --retry-failed
 pnpm run label:heuristic

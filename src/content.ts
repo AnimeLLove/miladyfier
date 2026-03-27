@@ -274,7 +274,7 @@ async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: stri
       variants.map((entry) => entry.legacyFeatures),
       normalizedUrl,
     );
-    const effectiveScore = settings.invertScore ? 1 - score : score;
+    const effectiveScore = 1 - score;
     return {
       matched: effectiveScore >= resolvedModel.metadata.threshold,
       source: effectiveScore >= resolvedModel.metadata.threshold ? "onnx" : null,
@@ -385,7 +385,7 @@ function applyHiddenState(tweet: HTMLElement): void {
     placeholder = document.createElement("div");
     placeholder.className = "milady-shrinkifier-placeholder";
     const label = document.createElement("span");
-    label.textContent = "Milady post hidden";
+    label.textContent = "Other post hidden";
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Show";
@@ -508,21 +508,14 @@ function injectStyles(): void {
 
 function observeStorage(): void {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && (changes.mode || changes.invertScore || changes.whitelistHandles)) {
+    if (area === "sync" && (changes.mode || changes.whitelistHandles)) {
       const nextMode = changes.mode?.newValue;
-      const nextInvertScore = changes.invertScore?.newValue;
-      const invertScoreChanged =
-        typeof nextInvertScore !== "undefined" && (nextInvertScore === true) !== settings.invertScore;
       settings = {
         mode: isFilterMode(nextMode) ? nextMode : settings.mode,
-        invertScore: typeof nextInvertScore === "undefined" ? settings.invertScore : nextInvertScore === true,
         whitelistHandles: normalizeWhitelistHandles(
           changes.whitelistHandles?.newValue ?? settings.whitelistHandles,
         ),
       };
-      if (invertScoreChanged) {
-        cache.clear();
-      }
       scheduleProcessVisibleTweets();
     }
 

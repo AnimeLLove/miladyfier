@@ -2,7 +2,6 @@ export type FilterMode = "off" | "hide" | "fade" | "debug";
 
 export interface ExtensionSettings {
   mode: FilterMode;
-  invertScore: boolean;
   whitelistHandles: string[];
 }
 
