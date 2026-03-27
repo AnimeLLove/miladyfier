@@ -60,9 +60,7 @@ const styles = `
   body {
     margin: 0;
     min-width: 320px;
-    background:
-      radial-gradient(circle at top right, rgba(255, 109, 74, 0.18), transparent 34%),
-      linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+    background: var(--bg-0);
     color: var(--text);
     font-family: "Avenir Next", "Segoe UI", sans-serif;
   }
@@ -73,7 +71,12 @@ const styles = `
   }
 
   .popup {
+    min-height: 100vh;
     padding: 18px 16px 14px;
+    background:
+      radial-gradient(240px 180px at top right, rgba(255, 109, 74, 0.18), transparent 70%),
+      linear-gradient(180deg, var(--bg-1) 0px, var(--bg-0) 320px);
+    background-repeat: no-repeat;
   }
 
   .header {
@@ -145,7 +148,6 @@ const styles = `
   .panel {
     min-height: 292px;
     padding-top: 14px;
-    border-top: 1px solid var(--line);
   }
 
   .panel-header {
