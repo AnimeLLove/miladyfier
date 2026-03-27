@@ -16,12 +16,19 @@ import {
   findBestCandidate,
   normalizeProfileImageUrl,
 } from "./shared/image-core";
-import { loadSettings, loadStats, saveStats } from "./shared/storage";
+import {
+  loadMatchedAccounts,
+  loadSettings,
+  loadStats,
+  saveMatchedAccounts,
+  saveStats,
+} from "./shared/storage";
 import type {
   DetectionStats,
   DetectionResult,
   ExtensionSettings,
   HashDatabase,
+  MatchedAccountMap,
   ModelMetadata,
   WorkerResponse,
 } from "./shared/types";
@@ -39,13 +46,18 @@ let workerPromise: Promise<Worker> | null = null;
 let pendingWorker = new Map<string, (score: number) => void>();
 let scanScheduled = false;
 let stats: DetectionStats | null = null;
-let statsWriteScheduled = false;
+let matchedAccounts: MatchedAccountMap | null = null;
+let localStateWriteScheduled = false;
 
 void boot();
 
 async function boot(): Promise<void> {
   injectStyles();
-  [settings, stats] = await Promise.all([loadSettings(), loadStats()]);
+  [settings, stats, matchedAccounts] = await Promise.all([
+    loadSettings(),
+    loadStats(),
+    loadMatchedAccounts(),
+  ]);
   observeStorage();
   const observer = new MutationObserver(() => {
     scheduleProcessVisibleTweets();
@@ -75,6 +87,7 @@ function scheduleProcessVisibleTweets(): void {
 
 async function processTweet(tweet: HTMLElement): Promise<void> {
   const avatar = findAvatar(tweet);
+  const author = findAuthor(tweet);
   if (!avatar) {
     clearEffects(tweet);
     delete tweet.dataset.miladyShrinkifier;
@@ -82,8 +95,15 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
     return;
   }
 
+  if (author && settings.whitelistHandles.includes(author.handle)) {
+    clearEffects(tweet);
+    delete tweet.dataset.miladyShrinkifier;
+    delete tweet.dataset.miladyShrinkifierState;
+    return;
+  }
+
   const normalizedUrl = normalizeProfileImageUrl(avatar.currentSrc || avatar.src);
-  if (processed.get(tweet) === normalizedUrl) {
+  if (processed.get(tweet) === normalizedUrl && tweet.dataset.miladyShrinkifierState) {
     applyMode(tweet);
     return;
   }
@@ -95,6 +115,9 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
     tweet.dataset.miladyShrinkifier = result.source ?? "match";
     tweet.dataset.miladyShrinkifierState = "match";
     incrementMatchStats(result);
+    if (author) {
+      recordMatchedAccount(author.handle, author.displayName);
+    }
     applyMode(tweet);
     return;
   }
@@ -204,6 +227,22 @@ function findAvatar(tweet: HTMLElement): HTMLImageElement | null {
   );
 }
 
+function findAuthor(tweet: HTMLElement): { handle: string; displayName: string | null } | null {
+  const avatarLink = tweet.querySelector<HTMLAnchorElement>(
+    '[data-testid="Tweet-User-Avatar"] a[href^="/"]',
+  );
+  const handle = normalizeHandle(avatarLink?.getAttribute("href"));
+  if (!handle) {
+    return null;
+  }
+
+  const userName = tweet.querySelector<HTMLElement>('[data-testid="User-Name"]');
+  return {
+    handle,
+    displayName: userName ? extractDisplayName(userName) : null,
+  };
+}
+
 function applyMode(tweet: HTMLElement): void {
   clearVisualClasses(tweet);
   const isMatch = tweet.dataset.miladyShrinkifierState === "match";
@@ -308,15 +347,13 @@ function injectStyles(): void {
     }
 
     .milady-shrinkifier-debug-match {
-      box-shadow: inset 0 0 0 2px rgba(46, 204, 113, 0.95);
-      border-radius: 18px;
-      background-image: linear-gradient(rgba(46, 204, 113, 0.08), rgba(46, 204, 113, 0.08));
+      box-shadow: inset 0 0 0 2px rgba(231, 76, 60, 0.95);
+      background-image: linear-gradient(rgba(231, 76, 60, 0.08), rgba(231, 76, 60, 0.08));
     }
 
     .milady-shrinkifier-debug-miss {
-      box-shadow: inset 0 0 0 2px rgba(231, 76, 60, 0.75);
-      border-radius: 18px;
-      background-image: linear-gradient(rgba(231, 76, 60, 0.04), rgba(231, 76, 60, 0.04));
+      box-shadow: inset 0 0 0 2px rgba(46, 204, 113, 0.75);
+      background-image: linear-gradient(rgba(46, 204, 113, 0.04), rgba(46, 204, 113, 0.04));
     }
 
     .milady-shrinkifier-placeholder {
@@ -348,16 +385,23 @@ function injectStyles(): void {
 
 function observeStorage(): void {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && changes.mode) {
+    if (area === "sync" && (changes.mode || changes.whitelistHandles)) {
+      const nextMode = changes.mode?.newValue;
       settings = {
-        mode: isFilterMode(changes.mode.newValue) ? changes.mode.newValue : DEFAULT_SETTINGS.mode,
+        mode: isFilterMode(nextMode) ? nextMode : settings.mode,
+        whitelistHandles: normalizeWhitelistHandles(
+          changes.whitelistHandles?.newValue ?? settings.whitelistHandles,
+        ),
       };
       scheduleProcessVisibleTweets();
-      return;
     }
 
     if (area === "local" && changes.stats) {
       stats = normalizeStats(changes.stats.newValue);
+    }
+
+    if (area === "local" && changes.matchedAccounts) {
+      matchedAccounts = normalizeMatchedAccounts(changes.matchedAccounts.newValue);
     }
   });
 }
@@ -430,7 +474,7 @@ async function scoreWithOnnx(features: number[], seed: string): Promise<number> 
 }
 
 function isFilterMode(value: unknown): value is ExtensionSettings["mode"] {
-  return value === "off" || value === "hide" || value === "scale" || value === "fade";
+  return value === "off" || value === "hide" || value === "fade" || value === "debug";
 }
 
 function incrementMatchStats(result: DetectionResult): void {
@@ -445,7 +489,7 @@ function incrementMatchStats(result: DetectionResult): void {
     return;
   }
   stats.lastMatchAt = new Date().toISOString();
-  scheduleStatsWrite();
+  scheduleLocalStateWrite();
 }
 
 function incrementStat(key: keyof Omit<DetectionStats, "lastMatchAt">): void {
@@ -453,20 +497,35 @@ function incrementStat(key: keyof Omit<DetectionStats, "lastMatchAt">): void {
     return;
   }
   stats[key] += 1;
-  scheduleStatsWrite();
+  scheduleLocalStateWrite();
 }
 
-function scheduleStatsWrite(): void {
-  if (statsWriteScheduled || !stats) {
+function recordMatchedAccount(handle: string, displayName: string | null): void {
+  if (!matchedAccounts) {
     return;
   }
-  statsWriteScheduled = true;
+
+  const existing = matchedAccounts[handle];
+  matchedAccounts[handle] = {
+    handle,
+    displayName: displayName ?? existing?.displayName ?? null,
+    postsMatched: (existing?.postsMatched ?? 0) + 1,
+    lastMatchedAt: new Date().toISOString(),
+  };
+  scheduleLocalStateWrite();
+}
+
+function scheduleLocalStateWrite(): void {
+  if (localStateWriteScheduled || !stats || !matchedAccounts) {
+    return;
+  }
+  localStateWriteScheduled = true;
   window.setTimeout(async () => {
-    statsWriteScheduled = false;
-    if (!stats) {
+    localStateWriteScheduled = false;
+    if (!stats || !matchedAccounts) {
       return;
     }
-    await saveStats(stats);
+    await Promise.all([saveStats(stats), saveMatchedAccounts(matchedAccounts)]);
   }, 250);
 }
 
@@ -503,4 +562,65 @@ function emptyStats(): DetectionStats {
     errors: 0,
     lastMatchAt: null,
   };
+}
+
+function normalizeWhitelistHandles(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return DEFAULT_SETTINGS.whitelistHandles;
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .filter((handle): handle is string => typeof handle === "string")
+        .map((handle) => normalizeHandle(handle))
+        .filter((handle) => handle.length > 0),
+    ),
+  );
+}
+
+function normalizeMatchedAccounts(value: unknown): MatchedAccountMap {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const normalized: MatchedAccountMap = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const candidate = entry as Record<string, unknown>;
+    const handle = normalizeHandle(
+      typeof candidate.handle === "string" && candidate.handle.length > 0 ? candidate.handle : key,
+    );
+    if (!handle) {
+      continue;
+    }
+
+    normalized[handle] = {
+      handle,
+      displayName: typeof candidate.displayName === "string" ? candidate.displayName : null,
+      postsMatched: readNumber(candidate.postsMatched),
+      lastMatchedAt: typeof candidate.lastMatchedAt === "string" ? candidate.lastMatchedAt : null,
+    };
+  }
+
+  return normalized;
+}
+
+function normalizeHandle(value: string | null | undefined): string {
+  return (value ?? "").trim().replace(/^\/+/, "").replace(/^@+/, "").toLowerCase();
+}
+
+function extractDisplayName(userName: HTMLElement): string | null {
+  for (const span of Array.from(userName.querySelectorAll("span"))) {
+    const text = span.textContent?.trim();
+    if (!text || text.startsWith("@") || text === "·") {
+      continue;
+    }
+    return text;
+  }
+
+  return null;
 }

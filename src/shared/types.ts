@@ -2,6 +2,7 @@ export type FilterMode = "off" | "hide" | "fade" | "debug";
 
 export interface ExtensionSettings {
   mode: FilterMode;
+  whitelistHandles: string[];
 }
 
 export interface DetectionStats {
@@ -14,6 +15,15 @@ export interface DetectionStats {
   errors: number;
   lastMatchAt: string | null;
 }
+
+export interface MatchedAccount {
+  handle: string;
+  displayName: string | null;
+  postsMatched: number;
+  lastMatchedAt: string | null;
+}
+
+export type MatchedAccountMap = Record<string, MatchedAccount>;
 
 export interface HashEntry {
   tokenId: number;
