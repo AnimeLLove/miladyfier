@@ -745,6 +745,7 @@ INDEX_HTML = """<!doctype html>
       let selectedBatchIndex = 0;
       let activeView = "individual";
       const batchLabelOrder = ["not_milady", "milady", "unclear"];
+      const batchTileKeys = [7, 8, 9, 4, 5, 6, 1, 2, 3];
       const numpadIndexMap = {
         Numpad7: 0,
         Numpad8: 1,
@@ -837,7 +838,7 @@ INDEX_HTML = """<!doctype html>
           tile.innerHTML = `
             <img src="/api/image/${entry.item.sha256}" alt="${entry.item.sha256}" />
             <div class="batch-caption">
-              <span>${index + 1}</span>
+              <span>${batchTileKeys[index]}</span>
               <span class="batch-badge">${shortLabel(entry.assignedLabel)}</span>
             </div>
           `;
