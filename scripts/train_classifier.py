@@ -4,6 +4,7 @@ import argparse
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 
 import torch
 from torch import nn
@@ -68,12 +69,17 @@ def main() -> None:
     best_val_metrics: dict[str, float] | None = None
     history: list[dict[str, float | int]] = []
     stale_epochs = 0
+    training_started_at = perf_counter()
+    completed_epoch_durations: list[float] = []
 
     for epoch in range(1, args.epochs + 1):
         print(f"[epoch {epoch}/{args.epochs}] start", flush=True)
+        epoch_started_at = perf_counter()
         train_loss = run_epoch(model, train_loader, criterion, optimizer, device, epoch, args.epochs, args.log_every)
         val_probabilities, val_labels = evaluate(model, val_loader, device)
         threshold, threshold_metrics = choose_threshold(val_probabilities, val_labels, args.precision_floor)
+        epoch_duration_seconds = perf_counter() - epoch_started_at
+        completed_epoch_durations.append(epoch_duration_seconds)
         history.append(
             {
                 "epoch": epoch,
@@ -86,7 +92,20 @@ def main() -> None:
         )
         improved = threshold_metrics["recall"] > best_recall
         stale_after_epoch = 0 if improved else stale_epochs + 1
-        print_epoch_summary(epoch, args.epochs, train_loss, threshold, threshold_metrics, improved, stale_after_epoch, args.patience)
+        overall_eta_seconds = estimate_overall_eta(args.epochs, epoch, completed_epoch_durations)
+        print_epoch_summary(
+            epoch,
+            args.epochs,
+            train_loss,
+            threshold,
+            threshold_metrics,
+            improved,
+            stale_after_epoch,
+            args.patience,
+            epoch_duration_seconds,
+            perf_counter() - training_started_at,
+            overall_eta_seconds,
+        )
 
         if improved:
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
@@ -182,6 +201,7 @@ def run_epoch(
     total_loss = 0.0
     total_items = 0
     total_batches = max(1, len(loader))
+    epoch_started_at = perf_counter()
     for batch_index, (inputs, labels) in enumerate(loader, start=1):
         inputs = inputs.to(device)
         labels = labels.to(device)
@@ -194,9 +214,13 @@ def run_epoch(
         total_items += inputs.size(0)
         if should_log_batch(batch_index, total_batches, log_every):
             average_loss = total_loss / max(1, total_items)
+            elapsed_seconds = perf_counter() - epoch_started_at
+            average_batch_seconds = elapsed_seconds / max(1, batch_index)
+            epoch_eta_seconds = average_batch_seconds * max(0, total_batches - batch_index)
             print(
                 f"[epoch {epoch}/{total_epochs}] batch {batch_index}/{total_batches} "
-                f"loss={loss.item():.4f} avg_loss={average_loss:.4f}",
+                f"loss={loss.item():.4f} avg_loss={average_loss:.4f} "
+                f"elapsed={format_duration(elapsed_seconds)} eta={format_duration(epoch_eta_seconds)}",
                 flush=True,
             )
     return total_loss / max(1, total_items)
@@ -249,6 +273,9 @@ def print_epoch_summary(
     improved: bool,
     stale_epochs: int,
     patience: int,
+    epoch_duration_seconds: float,
+    total_elapsed_seconds: float,
+    overall_eta_seconds: float,
 ) -> None:
     status = "best" if improved else f"stale={stale_epochs}/{patience}"
     print(
@@ -258,6 +285,9 @@ def print_epoch_summary(
         f"val_recall={threshold_metrics['recall']:.4f} "
         f"val_f1={threshold_metrics['f1']:.4f} "
         f"threshold={threshold:.4f} "
+        f"epoch_time={format_duration(epoch_duration_seconds)} "
+        f"total_elapsed={format_duration(total_elapsed_seconds)} "
+        f"overall_eta={format_duration(overall_eta_seconds)} "
         f"{status}",
         flush=True,
     )
@@ -269,6 +299,24 @@ def should_log_batch(batch_index: int, total_batches: int, log_every: int) -> bo
     if log_every <= 0:
         return False
     return batch_index % log_every == 0
+
+
+def estimate_overall_eta(total_epochs: int, completed_epochs: int, epoch_durations: list[float]) -> float:
+    if completed_epochs >= total_epochs or not epoch_durations:
+        return 0.0
+    average_epoch_seconds = sum(epoch_durations) / len(epoch_durations)
+    return average_epoch_seconds * max(0, total_epochs - completed_epochs)
+
+
+def format_duration(seconds: float) -> str:
+    total_seconds = max(0, int(round(seconds)))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}h{minutes:02d}m{secs:02d}s"
+    if minutes > 0:
+        return f"{minutes}m{secs:02d}s"
+    return f"{secs}s"
 
 
 if __name__ == "__main__":
