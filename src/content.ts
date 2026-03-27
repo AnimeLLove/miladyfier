@@ -1,11 +1,7 @@
 import {
   CLASSIFIER_MODEL_METADATA_URL,
   CLASSIFIER_MODEL_URL,
-  COLOR_DISTANCE_THRESHOLD,
   DEFAULT_SETTINGS,
-  HASH_MATCH_THRESHOLD,
-  HASH_ONNX_THRESHOLD,
-  HASH_URL,
   LEGACY_MODEL_METADATA_URL,
   LEGACY_MODEL_URL,
 } from "./shared/constants";
@@ -14,8 +10,6 @@ import {
   computeBrowserImageFeatures,
 } from "./shared/browser-image";
 import {
-  colorDistance,
-  findBestCandidate,
   normalizeProfileImageUrl,
 } from "./shared/image-core";
 import {
@@ -32,7 +26,6 @@ import type {
   DetectionStats,
   DetectionResult,
   ExtensionSettings,
-  HashDatabase,
   MatchedAccountMap,
   ModelMetadata,
   WorkerRequest,
@@ -50,7 +43,6 @@ const placeholders = new WeakMap<HTMLElement, HTMLDivElement>();
 const revealed = new WeakMap<HTMLElement, string>();
 
 let settings: ExtensionSettings = DEFAULT_SETTINGS;
-let hashDatabasePromise: Promise<HashDatabase> | null = null;
 let modelMetadataPromise: Promise<ResolvedModel> | null = null;
 let workerPromise: Promise<Worker> | null = null;
 let pendingWorker = new Map<string, { resolve: (score: number) => void; reject: (error: Error) => void }>();
@@ -270,65 +262,11 @@ async function detectAvatar(image: HTMLImageElement, normalizedUrl: string): Pro
 async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: string): Promise<DetectionResult> {
   incrementStat("avatarsChecked");
   try {
-    const database = await loadHashDatabase();
     const runtimeImage = await loadCorsImage(normalizedUrl);
     const variants = await Promise.all([
       computeBrowserImageFeatures(runtimeImage, "center"),
       computeBrowserImageFeatures(runtimeImage, "top"),
     ]);
-    const candidates = variants.map((features) => {
-      const candidate = findBestCandidate(features.hash, features.averageColor, database.hashes);
-      return {
-        features,
-        candidate,
-        averageColorDistance: colorDistance(features.averageColor, candidate.entry.averageColor),
-      };
-    });
-    const strongMatch = candidates.find(
-      ({ candidate, averageColorDistance }) =>
-        candidate.distance <= HASH_MATCH_THRESHOLD &&
-        averageColorDistance <= COLOR_DISTANCE_THRESHOLD,
-    );
-
-    if (strongMatch) {
-      return {
-        matched: true,
-        source: "phash",
-        score: strongMatch.candidate.distance,
-        tokenId: strongMatch.candidate.entry.tokenId,
-        debugLabel: formatHashDebugLabel(strongMatch.candidate.distance, strongMatch.averageColorDistance),
-      };
-    }
-
-    const best = candidates.reduce((currentBest, entry) => {
-      if (!currentBest) {
-        return entry;
-      }
-
-      if (entry.candidate.distance < currentBest.candidate.distance) {
-        return entry;
-      }
-
-      if (
-        entry.candidate.distance === currentBest.candidate.distance &&
-        entry.averageColorDistance < currentBest.averageColorDistance
-      ) {
-        return entry;
-      }
-
-      return currentBest;
-    }, candidates[0]);
-
-    if (best.candidate.distance > HASH_ONNX_THRESHOLD) {
-      return {
-        matched: false,
-        source: null,
-        score: best.candidate.distance,
-        tokenId: null,
-        debugLabel: formatHashDebugLabel(best.candidate.distance, best.averageColorDistance),
-      };
-    }
-
     const resolvedModel = await loadModelMetadata();
     const score = await scoreWithOnnx(
       resolvedModel,
@@ -340,7 +278,7 @@ async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: stri
       matched: score >= resolvedModel.metadata.threshold,
       source: score >= resolvedModel.metadata.threshold ? "onnx" : null,
       score,
-      tokenId: score >= resolvedModel.metadata.threshold ? best.candidate.entry.tokenId : null,
+      tokenId: null,
       debugLabel: formatProbabilityDebugLabel(score, resolvedModel.metadata.threshold),
     };
   } catch (error) {
@@ -594,18 +532,6 @@ function observeStorage(): void {
   });
 }
 
-async function loadHashDatabase(): Promise<HashDatabase> {
-  if (!hashDatabasePromise) {
-    hashDatabasePromise = fetch(chrome.runtime.getURL(HASH_URL)).then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Failed to load hashes: ${response.status}`);
-      }
-      return response.json() as Promise<HashDatabase>;
-    });
-  }
-  return hashDatabasePromise;
-}
-
 async function loadModelMetadata(): Promise<ResolvedModel> {
   if (!modelMetadataPromise) {
     modelMetadataPromise = resolveModel(
@@ -730,11 +656,8 @@ function isFilterMode(value: unknown): value is ExtensionSettings["mode"] {
 
 function incrementMatchStats(result: DetectionResult): void {
   incrementStat("postsMatched");
-  if (result.source === "phash") {
-    incrementStat("phashMatches");
-  }
   if (result.source === "onnx") {
-    incrementStat("onnxMatches");
+    incrementStat("modelMatches");
   }
   if (!stats) {
     return;
@@ -836,8 +759,8 @@ function normalizeStats(value: unknown): DetectionStats {
     avatarsChecked: readNumber(candidate.avatarsChecked),
     cacheHits: readNumber(candidate.cacheHits),
     postsMatched: readNumber(candidate.postsMatched),
-    phashMatches: readNumber(candidate.phashMatches),
-    onnxMatches: readNumber(candidate.onnxMatches),
+    modelMatches: readNumber((candidate as Record<string, unknown>).modelMatches)
+      || readNumber((candidate as Record<string, unknown>).onnxMatches),
     errors: readNumber(candidate.errors),
     lastMatchAt: typeof candidate.lastMatchAt === "string" ? candidate.lastMatchAt : null,
   };
@@ -853,8 +776,7 @@ function emptyStats(): DetectionStats {
     avatarsChecked: 0,
     cacheHits: 0,
     postsMatched: 0,
-    phashMatches: 0,
-    onnxMatches: 0,
+    modelMatches: 0,
     errors: 0,
     lastMatchAt: null,
   };
@@ -1001,10 +923,6 @@ function normalizeHandle(value: string | null | undefined): string {
 
 function formatProbabilityDebugLabel(score: number, threshold: number): string {
   return `p${score.toFixed(3)} t${threshold.toFixed(3)}`;
-}
-
-function formatHashDebugLabel(distance: number, colorDistanceValue: number): string {
-  return `h${distance} c${colorDistanceValue}`;
 }
 
 function findTweetUrl(tweet: HTMLElement): string | null {

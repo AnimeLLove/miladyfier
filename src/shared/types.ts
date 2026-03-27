@@ -10,8 +10,7 @@ export interface DetectionStats {
   avatarsChecked: number;
   cacheHits: number;
   postsMatched: number;
-  phashMatches: number;
-  onnxMatches: number;
+  modelMatches: number;
   errors: number;
   lastMatchAt: string | null;
 }

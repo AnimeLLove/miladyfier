@@ -110,8 +110,8 @@ function normalizeStats(value: unknown): DetectionStats {
     avatarsChecked: readNumber(candidate.avatarsChecked),
     cacheHits: readNumber(candidate.cacheHits),
     postsMatched: readNumber(candidate.postsMatched),
-    phashMatches: readNumber(candidate.phashMatches),
-    onnxMatches: readNumber(candidate.onnxMatches),
+    modelMatches: readNumber((candidate as Record<string, unknown>).modelMatches)
+      || readNumber((candidate as Record<string, unknown>).onnxMatches),
     errors: readNumber(candidate.errors),
     lastMatchAt: typeof candidate.lastMatchAt === "string" ? candidate.lastMatchAt : null,
   };

@@ -367,8 +367,7 @@ function renderStats(stats: DetectionStats): void {
   writeStat("avatarsChecked", formatNumber(stats.avatarsChecked));
   writeStat("cacheHits", formatNumber(stats.cacheHits));
   writeStat("postsMatched", formatNumber(stats.postsMatched));
-  writeStat("phashMatches", formatNumber(stats.phashMatches));
-  writeStat("onnxMatches", formatNumber(stats.onnxMatches));
+  writeStat("modelMatches", formatNumber(stats.modelMatches));
   writeStat("errors", formatNumber(stats.errors));
   writeStat("lastMatchAt", stats.lastMatchAt ? formatDate(stats.lastMatchAt) : "Never");
 }
@@ -496,8 +495,8 @@ function normalizeStats(value: unknown): DetectionStats {
     avatarsChecked: readNumber(candidate.avatarsChecked),
     cacheHits: readNumber(candidate.cacheHits),
     postsMatched: readNumber(candidate.postsMatched),
-    phashMatches: readNumber(candidate.phashMatches),
-    onnxMatches: readNumber(candidate.onnxMatches),
+    modelMatches: readNumber((candidate as Record<string, unknown>).modelMatches)
+      || readNumber((candidate as Record<string, unknown>).onnxMatches),
     errors: readNumber(candidate.errors),
     lastMatchAt: typeof candidate.lastMatchAt === "string" ? candidate.lastMatchAt : null,
   };
@@ -680,8 +679,7 @@ function emptyStats(): DetectionStats {
     avatarsChecked: 0,
     cacheHits: 0,
     postsMatched: 0,
-    phashMatches: 0,
-    onnxMatches: 0,
+    modelMatches: 0,
     errors: 0,
     lastMatchAt: null,
   };
