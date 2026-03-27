@@ -258,6 +258,19 @@ const styles = `
     line-height: 1.45;
   }
 
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    color: var(--text-soft);
+    font-size: 12px;
+  }
+
+  .toggle-row input {
+    margin: 0;
+  }
+
   .stats-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -427,6 +440,9 @@ function App() {
         if (changes.mode) {
           setSettings((current) => ({ ...current, mode: getStoredMode(changes.mode.newValue) }));
         }
+        if (changes.invertScore) {
+          setSettings((current) => ({ ...current, invertScore: changes.invertScore.newValue === true }));
+        }
         if (changes.whitelistHandles) {
           setSettings((current) => ({
             ...current,
@@ -454,6 +470,12 @@ function App() {
 
   const setMode = async (mode: FilterMode) => {
     const next = { ...settings(), mode };
+    setSettings(next);
+    await saveSettings(next);
+  };
+
+  const setInvertScore = async (invertScore: boolean) => {
+    const next = { ...settings(), invertScore };
     setSettings(next);
     await saveSettings(next);
   };
@@ -533,6 +555,14 @@ function App() {
                 )}
               </For>
             </div>
+            <label class="toggle-row">
+              <input
+                type="checkbox"
+                checked={settings().invertScore}
+                onChange={(event) => void setInvertScore(event.currentTarget.checked)}
+              />
+              <span>Invert score (hack)</span>
+            </label>
           </section>
         </Show>
 

@@ -274,12 +274,13 @@ async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: stri
       variants.map((entry) => entry.legacyFeatures),
       normalizedUrl,
     );
+    const effectiveScore = settings.invertScore ? 1 - score : score;
     return {
-      matched: score >= resolvedModel.metadata.threshold,
-      source: score >= resolvedModel.metadata.threshold ? "onnx" : null,
-      score,
+      matched: effectiveScore >= resolvedModel.metadata.threshold,
+      source: effectiveScore >= resolvedModel.metadata.threshold ? "onnx" : null,
+      score: effectiveScore,
       tokenId: null,
-      debugLabel: formatProbabilityDebugLabel(score, resolvedModel.metadata.threshold),
+      debugLabel: formatProbabilityDebugLabel(effectiveScore, resolvedModel.metadata.threshold),
     };
   } catch (error) {
     console.error("Milady detection failed", error);
@@ -507,14 +508,21 @@ function injectStyles(): void {
 
 function observeStorage(): void {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && (changes.mode || changes.whitelistHandles)) {
+    if (area === "sync" && (changes.mode || changes.invertScore || changes.whitelistHandles)) {
       const nextMode = changes.mode?.newValue;
+      const nextInvertScore = changes.invertScore?.newValue;
+      const invertScoreChanged =
+        typeof nextInvertScore !== "undefined" && (nextInvertScore === true) !== settings.invertScore;
       settings = {
         mode: isFilterMode(nextMode) ? nextMode : settings.mode,
+        invertScore: typeof nextInvertScore === "undefined" ? settings.invertScore : nextInvertScore === true,
         whitelistHandles: normalizeWhitelistHandles(
           changes.whitelistHandles?.newValue ?? settings.whitelistHandles,
         ),
       };
+      if (invertScoreChanged) {
+        cache.clear();
+      }
       scheduleProcessVisibleTweets();
     }
 
