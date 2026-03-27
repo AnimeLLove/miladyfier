@@ -9,7 +9,16 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from pipeline_common import CATALOG_PATH, LABELS, REVIEW_QUEUES, connect_db, load_review_items, queue_items
+from pipeline_common import (
+    CATALOG_PATH,
+    LABELS,
+    LABELED_GRID_FILTERS,
+    REVIEW_QUEUES,
+    connect_db,
+    labeled_grid_items,
+    load_review_items,
+    queue_items,
+)
 
 
 class LabelPayload(BaseModel):
@@ -104,6 +113,22 @@ def get_history(limit: int = Query(24, ge=1, le=100)) -> JSONResponse:
             }
         )
     return JSONResponse({"history": history})
+
+
+@app.get("/api/labeled-grid")
+def get_labeled_grid(
+    filter_name: str = Query("all"),
+    limit: int = Query(240, ge=1, le=1000),
+) -> JSONResponse:
+    connection = connect_db()
+    items = labeled_grid_items(load_review_items(connection), filter_name)
+    return JSONResponse(
+        {
+            "filter": filter_name,
+            "total": len(items),
+            "items": [item.to_dict() for item in items[:limit]],
+        }
+    )
 
 
 @app.post("/api/label")
@@ -238,6 +263,9 @@ INDEX_HTML = """<!doctype html>
         border: 1px solid #ddd;
         padding: 16px;
       }
+      .full-width {
+        grid-column: 1 / -1;
+      }
       button,
       select {
         font: inherit;
@@ -294,6 +322,47 @@ INDEX_HTML = """<!doctype html>
         color: #666;
         font-size: 12px;
         margin: 10px 0 0;
+      }
+      .grid-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .labeled-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 10px;
+      }
+      .labeled-thumb {
+        display: block;
+        padding: 0;
+        border: 1px solid #d7d7d2;
+        background: white;
+      }
+      .labeled-thumb[data-selected="true"] {
+        border-color: #0f62fe;
+        box-shadow: 0 0 0 1px #0f62fe;
+      }
+      .labeled-thumb img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+      }
+      .labeled-thumb span {
+        display: block;
+        padding: 5px 6px;
+        font-size: 11px;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .grid-empty {
+        color: #666;
+        font-size: 12px;
+        margin: 8px 0 0;
       }
       .status-strip {
         display: flex;
@@ -387,6 +456,17 @@ INDEX_HTML = """<!doctype html>
         <h2>Metadata</h2>
         <dl id="metadata"></dl>
       </section>
+      <section class="panel full-width">
+        <div class="grid-toolbar">
+          <h2>Labeled grid</h2>
+          <label>
+            Filter
+            <select id="labeled-filter"></select>
+          </label>
+        </div>
+        <div id="labeled-grid" class="labeled-grid"></div>
+        <p id="labeled-grid-empty" class="grid-empty" hidden>No labeled images for this filter.</p>
+      </section>
     </div>
     <script>
       const queueSelect = document.getElementById("queue");
@@ -399,17 +479,32 @@ INDEX_HTML = """<!doctype html>
       const undo = document.getElementById("undo");
       const historyGrid = document.getElementById("history-grid");
       const historyEmpty = document.getElementById("history-empty");
+      const labeledFilter = document.getElementById("labeled-filter");
+      const labeledGrid = document.getElementById("labeled-grid");
+      const labeledGridEmpty = document.getElementById("labeled-grid-empty");
 
       let index = 0;
       let selectedSha = null;
 
       async function loadSummary() {
+        const currentQueue = queueSelect.value || "unlabeled";
+        const currentLabeledFilter = labeledFilter.value || "all";
         const response = await fetch("/api/summary");
         const payload = await response.json();
         summaryNode.textContent = `${payload.totalImages} images, ${payload.unlabeled} unlabeled`;
         queueSelect.innerHTML = Object.entries(payload.queueCounts)
           .map(([queue, count]) => `<option value="${queue}">${queue} (${count})</option>`)
           .join("");
+        queueSelect.value = payload.queueCounts[currentQueue] != null ? currentQueue : "unlabeled";
+        labeledFilter.innerHTML = [
+          ["all", "All"],
+          ["milady", "Milady"],
+          ["not_milady", "Not Milady"],
+          ["unclear", "Unclear"],
+        ].map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+        labeledFilter.value = ["all", "milady", "not_milady", "unclear"].includes(currentLabeledFilter)
+          ? currentLabeledFilter
+          : "all";
         undo.disabled = !payload.canUndo;
       }
 
@@ -464,6 +559,28 @@ INDEX_HTML = """<!doctype html>
             await loadItem();
           });
           historyGrid.append(button);
+        }
+      }
+
+      async function loadLabeledGrid() {
+        const filter = labeledFilter.value || "all";
+        const response = await fetch(`/api/labeled-grid?filter_name=${encodeURIComponent(filter)}`);
+        const payload = await response.json();
+        labeledGrid.innerHTML = "";
+        labeledGridEmpty.hidden = payload.items.length > 0;
+        for (const item of payload.items) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "labeled-thumb";
+          button.dataset.sha256 = item.sha256;
+          button.dataset.selected = String(selectedSha === item.sha256);
+          button.innerHTML = `<img src="/api/image/${item.sha256}" alt="${item.sha256}" /><span>${item.label}</span>`;
+          button.addEventListener("click", async () => {
+            selectedSha = item.sha256;
+            await loadLabeledGrid();
+            await loadItem();
+          });
+          labeledGrid.append(button);
         }
       }
 
@@ -535,6 +652,7 @@ INDEX_HTML = """<!doctype html>
         index += 1;
         await loadSummary();
         await loadHistory();
+        await loadLabeledGrid();
         await loadItem();
       }
 
@@ -548,6 +666,7 @@ INDEX_HTML = """<!doctype html>
         index = Math.max(0, index - 1);
         await loadSummary();
         await loadHistory();
+        await loadLabeledGrid();
         await loadItem();
       }
 
@@ -556,6 +675,7 @@ INDEX_HTML = """<!doctype html>
         index = 0;
         await loadItem();
       });
+      labeledFilter.addEventListener("change", loadLabeledGrid);
       skip.addEventListener("click", async () => {
         selectedSha = null;
         index += 1;
@@ -580,6 +700,7 @@ INDEX_HTML = """<!doctype html>
       });
       loadSummary().then(async () => {
         await loadHistory();
+        await loadLabeledGrid();
         await loadItem();
       });
     </script>

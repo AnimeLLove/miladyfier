@@ -24,10 +24,6 @@ PUBLIC_METADATA_PATH = Path("public/generated/milady-mobilenetv3-small.meta.json
 OFFICIAL_IMAGE_ROOT = CACHE_ROOT / "milady-maker"
 REVIEW_QUEUES = (
     "unlabeled",
-    "labeled_all",
-    "labeled_milady",
-    "labeled_not_milady",
-    "labeled_unclear",
     "heuristic_matches",
     "whitelisted",
     "high_seen_count",
@@ -36,6 +32,7 @@ REVIEW_QUEUES = (
     "high_score_false_positive",
 )
 LABELS = ("milady", "not_milady", "unclear")
+LABELED_GRID_FILTERS = ("all", "milady", "not_milady", "unclear")
 
 
 @dataclass(slots=True)
@@ -426,14 +423,6 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
     if queue_name not in REVIEW_QUEUES:
         raise ValueError(f"Unsupported review queue: {queue_name}")
 
-    def labeled_sort_key(item: ReviewItem) -> tuple[int, float, int, str]:
-        return (
-            len(item.disagreement_flags),
-            item.max_model_score if item.max_model_score is not None else -1.0,
-            item.seen_count,
-            item.labeled_at or "",
-        )
-
     if queue_name == "unlabeled":
         filtered = [item for item in items if item.label is None]
         return sorted(
@@ -446,18 +435,6 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             ),
             reverse=True,
         )
-
-    if queue_name == "labeled_all":
-        return sorted((item for item in items if item.label is not None), key=labeled_sort_key, reverse=True)
-
-    if queue_name == "labeled_milady":
-        return sorted((item for item in items if item.label == "milady"), key=labeled_sort_key, reverse=True)
-
-    if queue_name == "labeled_not_milady":
-        return sorted((item for item in items if item.label == "not_milady"), key=labeled_sort_key, reverse=True)
-
-    if queue_name == "labeled_unclear":
-        return sorted((item for item in items if item.label == "unclear"), key=labeled_sort_key, reverse=True)
 
     if queue_name == "heuristic_matches":
         return sorted((item for item in items if item.heuristic_match), key=lambda item: item.seen_count, reverse=True)
@@ -493,5 +470,25 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             if item.label == "not_milady" and item.max_model_score is not None
         ),
         key=lambda item: item.max_model_score if item.max_model_score is not None else -1.0,
+        reverse=True,
+    )
+
+
+def labeled_grid_items(items: list[ReviewItem], filter_name: str) -> list[ReviewItem]:
+    if filter_name not in LABELED_GRID_FILTERS:
+        raise ValueError(f"Unsupported labeled grid filter: {filter_name}")
+
+    filtered = [item for item in items if item.label is not None]
+    if filter_name != "all":
+        filtered = [item for item in filtered if item.label == filter_name]
+
+    return sorted(
+        filtered,
+        key=lambda item: (
+            len(item.disagreement_flags),
+            item.max_model_score if item.max_model_score is not None else -1.0,
+            item.seen_count,
+            item.labeled_at or "",
+        ),
         reverse=True,
     )
