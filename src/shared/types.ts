@@ -85,6 +85,7 @@ export interface DetectionResult {
   source: "phash" | "onnx" | null;
   score: number | null;
   tokenId: number | null;
+  debugLabel?: string | null;
 }
 
 export interface WorkerRequest {

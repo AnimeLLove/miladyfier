@@ -132,6 +132,7 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
     const author = findAuthor(tweet);
     if (!avatar) {
       tweet.dataset.miladyShrinkifierState = "miss";
+      delete tweet.dataset.miladyShrinkifierDebug;
       applyMode(tweet);
       scheduleDelayedProcessVisibleTweets();
       return;
@@ -139,6 +140,7 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
 
     if (!avatar.currentSrc && !avatar.src) {
       tweet.dataset.miladyShrinkifierState = "miss";
+      delete tweet.dataset.miladyShrinkifierDebug;
       applyMode(tweet);
       scheduleDelayedProcessVisibleTweets();
       return;
@@ -174,9 +176,15 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
     }
 
     tweet.dataset.miladyShrinkifierState = "miss";
+    tweet.dataset.miladyShrinkifierDebug = "…";
     applyMode(tweet, normalizedUrl);
     incrementStat("tweetsScanned");
     const result = await detectAvatar(avatar, normalizedUrl);
+    if (result.debugLabel) {
+      tweet.dataset.miladyShrinkifierDebug = result.debugLabel;
+    } else {
+      delete tweet.dataset.miladyShrinkifierDebug;
+    }
     recordCollectedAvatar({
       normalizedUrl,
       originalUrl: avatar.currentSrc || avatar.src,
@@ -202,12 +210,14 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
     clearEffects(tweet);
     delete tweet.dataset.miladyShrinkifier;
     tweet.dataset.miladyShrinkifierState = "miss";
+    delete tweet.dataset.miladyShrinkifierDebug;
     applyMode(tweet, normalizedUrl);
   } catch (error) {
     console.error("Milady post processing failed", error);
     clearEffects(tweet);
     delete tweet.dataset.miladyShrinkifier;
     tweet.dataset.miladyShrinkifierState = "miss";
+    tweet.dataset.miladyShrinkifierDebug = "err";
     applyMode(tweet);
   }
 }
@@ -284,6 +294,7 @@ async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: stri
         source: "phash",
         score: strongMatch.candidate.distance,
         tokenId: strongMatch.candidate.entry.tokenId,
+        debugLabel: formatHashDebugLabel(strongMatch.candidate.distance, strongMatch.averageColorDistance),
       };
     }
 
@@ -312,6 +323,7 @@ async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: stri
         source: null,
         score: best.candidate.distance,
         tokenId: null,
+        debugLabel: formatHashDebugLabel(best.candidate.distance, best.averageColorDistance),
       };
     }
 
@@ -327,6 +339,7 @@ async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: stri
       source: score >= resolvedModel.metadata.threshold ? "onnx" : null,
       score,
       tokenId: score >= resolvedModel.metadata.threshold ? best.candidate.entry.tokenId : null,
+      debugLabel: formatProbabilityDebugLabel(score, resolvedModel.metadata.threshold),
     };
   } catch (error) {
     console.error("Milady detection failed", error);
@@ -336,6 +349,7 @@ async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: stri
       source: null,
       score: null,
       tokenId: null,
+      debugLabel: "err",
     };
   }
 }
@@ -406,6 +420,7 @@ function applyMode(tweet: HTMLElement, normalizedUrl?: string): void {
 
 function clearEffects(tweet: HTMLElement): void {
   clearVisualState(tweet);
+  delete tweet.dataset.miladyShrinkifierDebug;
   clearPlaceholder(tweet);
   tweet.style.display = "";
 }
@@ -489,6 +504,24 @@ function injectStyles(): void {
       border-radius: 0 !important;
       pointer-events: none;
       z-index: 2147483647;
+    }
+
+    [data-milady-shrinkifier-effect="debug-match"]::before,
+    [data-milady-shrinkifier-effect="debug-miss"]::before {
+      content: attr(data-milady-shrinkifier-debug);
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      z-index: 2147483647;
+      padding: 2px 6px;
+      background: rgba(15, 20, 25, 0.92);
+      color: rgb(255, 255, 255);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.4;
+      pointer-events: none;
+      border-radius: 0;
     }
 
     [data-milady-shrinkifier-effect="debug-match"]::after {
@@ -962,6 +995,14 @@ function mergeUniqueStrings(
 
 function normalizeHandle(value: string | null | undefined): string {
   return (value ?? "").trim().replace(/^\/+/, "").replace(/^@+/, "").toLowerCase();
+}
+
+function formatProbabilityDebugLabel(score: number, threshold: number): string {
+  return `p${score.toFixed(3)} t${threshold.toFixed(3)}`;
+}
+
+function formatHashDebugLabel(distance: number, colorDistanceValue: number): string {
+  return `h${distance} c${colorDistanceValue}`;
 }
 
 function findTweetUrl(tweet: HTMLElement): string | null {
