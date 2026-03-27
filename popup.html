@@ -4,56 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Milady Shrinkifier</title>
-    <script type="module" src="/src/popup.ts"></script>
+    <script type="module" src="/src/popup.tsx"></script>
   </head>
   <body>
-    <main class="popup">
-      <h1>Milady Shrinkifier</h1>
-      <p class="lede">Filter posts from accounts using a Milady Maker avatar.</p>
-      <form id="mode-form" class="mode-form">
-        <label><input type="radio" name="mode" value="off" /> Off</label>
-        <label><input type="radio" name="mode" value="hide" /> Hide posts</label>
-        <label><input type="radio" name="mode" value="fade" /> Fade to 50%</label>
-        <label><input type="radio" name="mode" value="debug" /> Debug borders</label>
-      </form>
-      <section class="stats" aria-labelledby="stats-heading">
-        <div class="stats-header">
-          <h2 id="stats-heading">Session Stats</h2>
-          <button id="reset-stats" type="button">Reset</button>
-        </div>
-        <dl class="stats-grid">
-          <div><dt>Tweets scanned</dt><dd data-stat="tweetsScanned">0</dd></div>
-          <div><dt>Avatars checked</dt><dd data-stat="avatarsChecked">0</dd></div>
-          <div><dt>Cache hits</dt><dd data-stat="cacheHits">0</dd></div>
-          <div><dt>Posts matched</dt><dd data-stat="postsMatched">0</dd></div>
-          <div><dt>Model hits</dt><dd data-stat="modelMatches">0</dd></div>
-          <div><dt>Errors</dt><dd data-stat="errors">0</dd></div>
-          <div><dt>Last hit</dt><dd data-stat="lastMatchAt">Never</dd></div>
-        </dl>
-      </section>
-      <section class="accounts" aria-labelledby="accounts-heading">
-        <div class="stats-header">
-          <h2 id="accounts-heading">Matched Accounts</h2>
-        </div>
-        <p class="section-note">Click a handle to mark it okay and bypass filtering.</p>
-        <p id="accounts-empty" class="footnote">No matched accounts yet.</p>
-        <div id="accounts-list" class="accounts-list"></div>
-      </section>
-      <section class="accounts" aria-labelledby="collection-heading">
-        <div class="stats-header">
-          <h2 id="collection-heading">Collected Avatars</h2>
-          <div class="section-actions">
-            <button id="export-avatars" type="button">Export</button>
-            <button id="reset-avatars" type="button">Reset</button>
-          </div>
-        </div>
-        <p class="section-note">Exports normalized avatar URLs and metadata for offline download and labeling.</p>
-        <dl class="stats-grid">
-          <div><dt>Unique avatars</dt><dd data-collection-stat="uniqueAvatars">0</dd></div>
-          <div><dt>Total sightings</dt><dd data-collection-stat="totalSightings">0</dd></div>
-        </dl>
-      </section>
-      <p class="footnote">Detection runs locally from the bundled Milady classifier.</p>
-    </main>
+    <div id="app"></div>
   </body>
 </html>

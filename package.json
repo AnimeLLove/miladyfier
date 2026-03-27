@@ -35,7 +35,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "onnxruntime-web": "^1.24.3"
+    "onnxruntime-web": "^1.24.3",
+    "solid-js": "^1.9.12"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.29",
@@ -47,6 +48,7 @@
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vite": "^8.0.3",
+    "vite-plugin-solid": "^2.11.11",
     "vite-plugin-static-copy": "^3.1.4",
     "vitest": "^4.1.2"
   }

@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import solid from "vite-plugin-solid";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -23,6 +24,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    solid(),
     viteStaticCopy({
       targets: [
         {
