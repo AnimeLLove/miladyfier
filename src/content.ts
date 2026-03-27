@@ -39,6 +39,7 @@ const RESCAN_INTERVAL_MS = 1000;
 const cache = new Map<string, Promise<DetectionResult>>();
 const processed = new WeakMap<HTMLElement, string>();
 const placeholders = new WeakMap<HTMLElement, HTMLDivElement>();
+const revealed = new WeakMap<HTMLElement, string>();
 
 let settings: ExtensionSettings = DEFAULT_SETTINGS;
 let hashDatabasePromise: Promise<HashDatabase> | null = null;
@@ -123,6 +124,7 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
     }
 
     if (author && settings.whitelistHandles.includes(author.handle)) {
+      revealed.delete(tweet);
       clearEffects(tweet);
       delete tweet.dataset.miladyShrinkifier;
       delete tweet.dataset.miladyShrinkifierState;
@@ -130,13 +132,17 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
     }
 
     const normalizedUrl = normalizeProfileImageUrl(avatar.currentSrc || avatar.src);
+    if (revealed.get(tweet) && revealed.get(tweet) !== normalizedUrl) {
+      revealed.delete(tweet);
+    }
+
     if (processed.get(tweet) === normalizedUrl && tweet.dataset.miladyShrinkifierState) {
-      applyMode(tweet);
+      applyMode(tweet, normalizedUrl);
       return;
     }
 
     tweet.dataset.miladyShrinkifierState = "miss";
-    applyMode(tweet);
+    applyMode(tweet, normalizedUrl);
     processed.set(tweet, normalizedUrl);
     incrementStat("tweetsScanned");
     const result = await detectAvatar(avatar, normalizedUrl);
@@ -147,14 +153,15 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
       if (author) {
         recordMatchedAccount(author.handle, author.displayName);
       }
-      applyMode(tweet);
+      applyMode(tweet, normalizedUrl);
       return;
     }
 
+    revealed.delete(tweet);
     clearEffects(tweet);
     delete tweet.dataset.miladyShrinkifier;
     tweet.dataset.miladyShrinkifierState = "miss";
-    applyMode(tweet);
+    applyMode(tweet, normalizedUrl);
   } catch (error) {
     console.error("Milady post processing failed", error);
     clearEffects(tweet);
@@ -279,13 +286,19 @@ function findAuthor(tweet: HTMLElement): { handle: string; displayName: string |
   };
 }
 
-function applyMode(tweet: HTMLElement): void {
+function applyMode(tweet: HTMLElement, normalizedUrl?: string): void {
   clearVisualState(tweet);
   const isMatch = tweet.dataset.miladyShrinkifierState === "match";
 
   switch (settings.mode) {
     case "hide":
       if (!isMatch) {
+        revealed.delete(tweet);
+        clearPlaceholder(tweet);
+        tweet.style.display = "";
+        return;
+      }
+      if (normalizedUrl && revealed.get(tweet) === normalizedUrl) {
         clearPlaceholder(tweet);
         tweet.style.display = "";
         return;
@@ -344,6 +357,10 @@ function applyHiddenState(tweet: HTMLElement): void {
     button.type = "button";
     button.textContent = "Show";
     button.addEventListener("click", () => {
+      const normalizedUrl = processed.get(tweet);
+      if (normalizedUrl) {
+        revealed.set(tweet, normalizedUrl);
+      }
       tweet.style.display = "";
       placeholder?.remove();
       placeholders.delete(tweet);
@@ -408,25 +425,31 @@ function injectStyles(): void {
     .milady-shrinkifier-placeholder {
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: 12px;
+      box-sizing: border-box;
+      min-height: 52px;
       padding: 12px 16px;
-      margin: 8px 0;
-      border: 1px solid rgba(83, 100, 113, 0.4);
-      border-radius: 16px;
-      background: rgba(21, 32, 43, 0.8);
-      color: rgb(231, 233, 234);
-      font: 14px/1.4 ui-sans-serif, system-ui, sans-serif;
+      margin: 0;
+      border-bottom: 1px solid rgb(239, 243, 244);
+      background: rgb(255, 255, 255);
+      color: rgb(83, 100, 113);
+      font-family: TwitterChirp, -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      font-weight: 400;
+      line-height: 20px;
     }
 
     .milady-shrinkifier-placeholder button {
       border: 0;
-      border-radius: 999px;
-      padding: 8px 12px;
-      background: rgb(239, 243, 244);
-      color: rgb(15, 20, 25);
+      padding: 0;
+      background: transparent;
+      color: rgb(29, 155, 240);
       font: inherit;
       cursor: pointer;
+    }
+
+    .milady-shrinkifier-placeholder button:hover {
+      text-decoration: underline;
     }
   `;
   document.head.append(style);
